@@ -1,0 +1,102 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  RIDER
+  CUSTOMER
+}
+
+enum RiderStatus {
+  AVAILABLE
+  BUSY
+  OFFLINE
+}
+
+enum DeliveryStatus {
+  PENDING
+  ASSIGNED
+  EN_ROUTE
+  PICKED_UP
+  DELIVERED
+}
+
+model User {
+  id             Int          @id @default(autoincrement())
+  name           String
+  email          String       @unique
+  password       String
+  role           Role
+  status         RiderStatus?
+  profilePicture String?
+  isAvailable    Boolean?     @default(false)
+  resetToken     String?      @default("")
+  resetExpires   DateTime?     
+
+  // Future-proof fields
+  lastOnlineAt DateTime?
+  currentLat   Float?
+  currentLng   Float?
+
+  // Relations
+  bookings         Booking[] @relation("CustomerBookings")
+  assignedBookings Booking[] @relation("RiderBookings")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isAvailable])
+  @@index([role])
+  @@index([status])
+  @@index([email])
+}
+
+model Booking {
+  id              Int            @id @default(autoincrement())
+  customerId      Int
+  riderId         Int?
+  pickupAddress   String
+  deliveryAddress String
+  code            String         @unique
+  status          DeliveryStatus @default(PENDING)
+  isDeleted       Boolean        @default(false)
+
+  // Relations
+  customer     User          @relation("CustomerBookings", fields: [customerId], references: [id])
+  rider        User?         @relation("RiderBookings", fields: [riderId], references: [id])
+  locationLogs LocationLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([code])
+  @@index([status])
+  @@index([riderId])
+  @@index([customerId])
+  @@index([isDeleted])
+}
+
+model LocationLog {
+  id        Int      @id @default(autoincrement())
+  bookingId Int
+  lat       Float
+  lng       Float
+  timestamp DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id])
+
+  @@index([bookingId])
+}
