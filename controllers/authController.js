@@ -1,49 +1,53 @@
-import { PrismaClient } from '@prisma/client';
-import bcrypt from 'bcryptjs';
+import  { PrismaClient } from '@prisma/client';
+import { generateToken } from '../utils/jwt.js';
+import { hashPassword, comparePassword } from '../utils/password.js';
 
 const prisma = new PrismaClient();
 
-// Create new user
-export const Register = async (req, res) => {
+export const register = async (req, res) => {
     try {
-        const {name, email, password, role} = req.body;
+        const { name, email, password, role} = req.body;
 
-        //Validate fields
-        if (!name || !email || !password || !role) {
-            return res.status(400).json({message: 'All fields are required'});
-        }
-
-        //Check if user exists
         const existingUser = await prisma.user.findUnique({
-            where: { email }
-        });
-        if (existingUser) {
-            return res.status(400).json({message: 'User already exists'});
-        }
-
-        //Check if role is valid
-        const validRoles = ['CUSTOMER', 'RIDER', 'ADMIN'];
-        if (!validRoles.includes(role)) {
-            return res.status(400).json({message: 'Invalid role selected'});
-        }
-
-        //Hash password
-        const hashedPassword = await bcrypt.hash(password, 8);
-
-         const user = await prisma.user.create({
-            data: {
-                name,
-                email,
-                password: hashedPassword,
-                role
+            where: {email} });
+            if (existingUser) {
+                return res.status(400).json({message: 'Email already in use'});
             }
-        });
-        // return success
-        const { password: _, ...userData } = user; // Exclude password from response
-        res.status(201).json({user: userData});
 
-    } catch (err) {
-        console.error('Error registering user:', err);
-        res.status(500).json({error: 'Failed to register user'});
+            const hashed = await hashPassword(password);
+
+            const newUser = await prisma.user.create({
+                data: { name, email, password: hashed, role}
+            });
+            res.status(201).json({
+                message: 'User registered successfully',
+                token: generateToken({ id: newUser.id, role: newUser.role }),
+                user: { id: newUser.id, name: newUser.name, role: newUser.role }
+            });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Server Error'});
     }
 };
+
+export const login = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (!user)
+            return res.status(400).json({message: 'Invalid credentials' });
+
+        const isMatch = await comparePassword(password, user.password);
+        if (!isMatch)
+            return res.status(400).json({ message: 'Invalid credentials' });
+
+            res.json({ message: 'Login Successful', token: generateToken({ id: user.id, role: user.role}),
+            user: { id: user.id, name: user.name, role: user.role}
+        });
+
+    } catch (error) {
+            console.error(error)
+            res.status(500).json({ message: 'Server error' });
+        } 
+}

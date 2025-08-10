@@ -1,30 +1,51 @@
-import jwt from 'jsonwebtoken';
-const secret = Process.env.JWT_SECRET || 'fallback_secret';
+import { PrismaClient } from '@prisma/client';
+import { verifyToken } from '../utils/jwt.js';
 
-export const verifyToken = (req, res, next) => {
+const prisma = new PrismaClient();
+
+export const protect = async (req, res, next) => {
+    console.log('Auth middleware entered');
+
+    // Get the authorization header
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) 
-        return 
-    res.status(401).json({ error: 'Unauthorized' });
 
-        const token = authHeader.split(' ')[1];
+    // Check header exists and starts with Bearer
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(400).json({ message: 'No token provided' });
+    }
 
-        try {
-            const decoded = jwt.verify(token, secret);
-            req.user = decoded;  //{id, email, role}
-            next();
-        } catch (err) {
-            console.error('Token verification failed:', err);
-            return res.status(401).json({ error: 'Invalid token' });
+    // Extract token
+    const token = authHeader.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ message: 'Not authorized, token missing' });
+    }
+
+    try {
+        // Verify token
+        const decoded = verifyToken(token); // await if async
+
+        // Find user
+        const user = await prisma.user.findUnique({ where: { id: decoded.id } });
+        if (!user) {
+            return res.status(401).json({ message: 'User does not exist' });
         }
-    };
 
-    export const authorizeRole = (...roles) => {
-        return (req, res, next) => {
-            if (!roles.includes(req.user.role)) {
-                return
-                res.status(403).json({ error: 'Forbidden' });
-            }
-            next();
-        };
+        // attach user to request
+        req.user = user;
+        console.log('User authenticated:', req.user);
+        next();
+    } catch (error) {
+        console.error('Auth middleware error:', error);
+        res.status(401).json({ message: 'Invalid or expired token' });
+    }
+};
+
+export const restrictTo = (...roles) => {
+    return (req, res, next) => {
+        if (!roles.includes(req.user.role)) {
+            return res.status(403).json({ message: 'Access denied: insufficient permissions' });
+        }
+        next();
     };
+};
