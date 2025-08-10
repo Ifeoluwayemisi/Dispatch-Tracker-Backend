@@ -65,22 +65,27 @@ export const getAssignedBookings = async(req,res) => {
 
 // rider to booking (Admin)
 export const assignRider = async (req, res) => {
-    try {
-        const bookingId = parseInt(req.params.id);
-        const { riderId } = req.body;
+  try {
+    const bookingId = parseInt(req.params.id);
+    const { riderId } = req.body;
 
-        // to update booking with assigned rider
-        const updatedBooking = await prisma.booking.update({
-            where: {id: bookingId},
-            data: { riderId, status: 'ASSIGNED' }
-        });
-
-        res.json({ message: 'Rider assigned', booking: updatedBooking });
-    } catch (error) {
-        console.error('Assign rider error:', error);
-        res.status(500).json({ message: 'Error assigning rider to a booking'});
+    const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found' });
     }
+
+    const updatedBooking = await prisma.booking.update({
+      where: { id: bookingId },
+      data: { riderId, status: 'ASSIGNED' }
+    });
+
+    res.json({ message: 'Rider assigned', booking: updatedBooking });
+  } catch (error) {
+    console.error('Assign rider error:', error);
+    res.status(500).json({ message: 'Error assigning rider to a booking' });
+  }
 };
+
 
 // Get customer booking
 export const getCustomerBookings = async(req, res) => {
