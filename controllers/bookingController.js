@@ -1,5 +1,6 @@
 import  { PrismaClient } from '@prisma/client';
 import { generateBookingCode } from '../utils/generateCode.js';
+import { verifyToken } from '../utils/jwt.js';
 
 const prisma = new PrismaClient();
 
@@ -44,9 +45,11 @@ export const getAssignedBookings = async(req,res) => {
         const { page = 1, limit = 10 } = req.query;
         const skip = (page - 1) * limit;
 
-        const riderId = req.user.id;
+        const riderId = Number(req.user.id);
+        console.log('getAssignedBookings riderId:', riderId);
+
         const bookings = await prisma.booking.findMany({
-            where: { riderId },
+            where: { riderId, isDeleted: false },
             include: {
                 customer: true,
                 locationLogs: true
@@ -66,26 +69,76 @@ export const getAssignedBookings = async(req,res) => {
 // rider to booking (Admin)
 export const assignRider = async (req, res) => {
   try {
-    const bookingId = parseInt(req.params.id);
-    const { riderId } = req.body;
+    const bookingId = Number(req.params.id);
+    const riderId = Number( req.body.riderId);
 
-    const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
-    if (!booking) {
-      return res.status(404).json({ message: 'Booking not found' });
+    if (!bookingId || !riderId) {
+        return res.status(400).json({ message: 'Booking and riderId not found' });
+    }
+    // confirm rider exist 
+    const rider = await prisma.user.findUnique({ where: { id: riderId} });
+    if(!rider || rider.role !== 'RIDER') {
+        return res.status(400).json({ message: 'Invalid riderId' });
     }
 
-    const updatedBooking = await prisma.booking.update({
+    const booking = await prisma.booking.update({
       where: { id: bookingId },
-      data: { riderId, status: 'ASSIGNED' }
-    });
+      data: { riderId, status: 'ASSIGNED' },
+    include: { customer: true, rider: true }
+  });
 
-    res.json({ message: 'Rider assigned', booking: updatedBooking });
-  } catch (error) {
+  console.log('Booking after assign:', booking);
+  return res.json({ message: 'Rider assigned', booking });
+
+} catch (error) {
     console.error('Assign rider error:', error);
     res.status(500).json({ message: 'Error assigning rider to a booking' });
   }
 };
 
+// verifydeliverycode
+export const verifyDeliveryCode = async (req, res) => {
+  try { 
+    const { bookingId, code } = req.body;
+    const riderId = Number(req.user.id);
+
+    if (!bookingId || !code) {
+      return res.status(400).json({ message: 'Bookingid and code required'});
+    }
+
+    const booking = await prisma.booking.findUnique({ where: { id: Number(bookingId) } });
+
+    if (!booking) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+    if (booking.riderId !== riderId) {
+      return res.status(403).json({ message: "Invalid delivery code or booking not assigned to this rider" });
+    }
+    if (booking.status === 'DELIVERED') {
+  return res.status(400).json({ message: 'This delivery code has already been used.' });
+    }
+
+
+    // Debug logs to reveal types and values before comparison
+    console.log('Booking code (from DB):', booking.code, typeof booking.code);
+    console.log('Code from request:', code, typeof code);
+
+    // Make sure both are strings trimmed of whitespace for a fair comparison
+    if (String(booking.code).trim() !== String(code).trim()) { 
+      return res.status(400).json({ message: "Invalid delivery code" }); 
+    }
+
+    const updated = await prisma.booking.update({
+      where: { id: Number(bookingId) },
+      data: { status: 'DELIVERED' }
+    });
+
+    return res.json({ message: 'Booking marked as delivered', booking: updated });
+  } catch (error) {
+    console.error('Error verifying delivery code:', error);
+    res.status(500).json({ message: 'Server error' });
+  }   
+};
 
 // Get customer booking
 export const getCustomerBookings = async(req, res) => {

@@ -8,13 +8,16 @@ import {
     assignRider,
     updateBookingStatus,
     logRiderLocation,
-    softDeleteBooking
+    softDeleteBooking,
+    verifyDeliveryCode
 } from '../controllers/bookingController.js';
 import { protect, restrictTo } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
 router.post('/', protect, restrictTo('CUSTOMER'), createBooking);
+router.post('/verify-code', protect, restrictTo('CUSTOMER', 'ADMIN', 'RIDER'), verifyDeliveryCode);
+router.post('/:bookingId/log-location', protect, restrictTo('RIDER'), logRiderLocation);
 router.get('/assigned', protect, restrictTo('ADMIN', 'RIDER'), getAssignedBookings);
 router.get('/customer', protect, restrictTo('CUSTOMER'), getCustomerBookings);
 router.get('/', protect, restrictTo('ADMIN'), getAllBookings);

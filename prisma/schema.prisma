@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -53,6 +47,7 @@ model User {
   // Relations
   bookings         Booking[] @relation("CustomerBookings")
   assignedBookings Booking[] @relation("RiderBookings")
+  deliveryLogs     DeliveryLog[] @relation("RiderDeliveryLogs")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -70,6 +65,7 @@ model Booking {
   pickupAddress   String
   deliveryAddress String
   code            String         @unique
+  codeExpiresAt   DateTime?      // expiration timestamp for delivery code
   status          DeliveryStatus @default(PENDING)
   isDeleted       Boolean        @default(false)
 
@@ -77,6 +73,7 @@ model Booking {
   customer     User          @relation("CustomerBookings", fields: [customerId], references: [id])
   rider        User?         @relation("RiderBookings", fields: [riderId], references: [id])
   locationLogs LocationLog[]
+  deliveryLogs DeliveryLog[]  @relation("BookingDeliveryLogs")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -86,6 +83,19 @@ model Booking {
   @@index([riderId])
   @@index([customerId])
   @@index([isDeleted])
+}
+
+model DeliveryLog {
+  id         Int      @id @default(autoincrement())
+  bookingId  Int
+  riderId    Int
+  usedAt     DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], name: "BookingDeliveryLogs")
+  rider   User    @relation(fields: [riderId], references: [id], name: "RiderDeliveryLogs")
+
+  @@index([bookingId])
+  @@index([riderId])
 }
 
 model LocationLog {
