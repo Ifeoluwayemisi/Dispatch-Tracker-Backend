@@ -40,7 +40,7 @@ export const createBooking = async(req, res) => {
 };
 
 // Get assigned booking (Rider)
-export const getAssignedBookings = async(req,res) => {
+export const getAssignedBookings = async (req, res) => {
     try {
         const { page = 1, limit = 10 } = req.query;
         const skip = (page - 1) * limit;
@@ -49,22 +49,38 @@ export const getAssignedBookings = async(req,res) => {
         console.log('getAssignedBookings riderId:', riderId);
 
         const bookings = await prisma.booking.findMany({
-            where: { riderId, isDeleted: false },
+            where: {
+                riderId: riderId || undefined // Only match if riderId exists
+            },
             include: {
                 customer: true,
                 locationLogs: true
             },
             skip: parseInt(skip),
             take: parseInt(limit),
-            orderBy: {createdAt: 'desc'}
+            // First sort so deleted bookings appear at the top, then newest first
+            orderBy: [
+                { isDeleted: 'desc' }, // Deleted = true first
+                { createdAt: 'desc' }   // Then order by date
+            ]
         });
-        
+
         res.status(200).json(bookings);
     } catch (err) {
         console.error('Error fetching bookings:', err);
-        res.status(500).json({error: 'Failed to fetch riders booking'});
+        res.status(500).json({ error: 'Failed to fetch rider bookings' });
     }
 };
+
+/*
+    Logic:
+    - Fetch only bookings that have been assigned to the logged-in rider.
+    - Includes related customer and location log data.
+    - Pagination is applied with skip & take.
+    - Results are ordered so that deleted bookings appear first (isDeleted = true),
+      then sorted by creation date (newest first).
+*/
+
 
 // rider to booking (Admin)
 export const assignRider = async (req, res) => {
@@ -175,22 +191,29 @@ export const getAllBookings = async (req, res) => {
 
 //get a single booking details
 export const getBookingById = async (req, res) => {
-    try {
-        const bookingId = parseInt(req.params.id);
-        const booking = await prisma.booking.findUnique({
-            where: { id: bookingId },
-            include: { customer: true, rider: true, locationLogs: true }
-        });
+  try {
+    const bookingId = parseInt(req.params.id, 10);
 
-        if(!booking) return 
-        res.status(404).json({ message: 'Booking not found' });
-        // check user role and ownership
-        res.json(booking);
-    } catch (error) {
-        console.error('Get booking by ID error:', error);
-        res.status(500).json({ message: 'Server error' });
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        customer: true,
+        rider: true,
+        locationLogs: true
+      }
+    });
+
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found' });
     }
+
+    res.json(booking);
+  } catch (error) {
+    console.error('Get booking by ID error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
 };
+
 
 //Update booking status
 export const updateBookingStatus = async(req, res) => {
@@ -235,21 +258,66 @@ export const logRiderLocation = async(req, res) => {
     }
 };
 
-export const softDeleteBooking = async(req, res) => {
-    try {
-        const { bookingId } = req.params;
-        await prisma.booking.update({
-            where: {
-                id: parseInt(bookingId)
-            },
-            data: {
-                isDeleted: true,
-            },
-        });
+export const softDeleteBooking = async (req, res) => {
+  try {
+    const bookingId = parseInt(req.params.bookingId);
 
-        res.status(200).json({message: 'Booking deleted successfully'});
-    } catch (err) {
-        console.error('Error deleting booking:', err);
-        res.status(500).json({error: 'Failed to delete booking'});
+    const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found' });
     }
-}
+
+    await prisma.booking.update({
+      where: { id: bookingId },
+      data: { isDeleted: true },
+    });
+
+    res.status(200).json({ message: 'Booking deleted successfully' });
+  } catch (err) {
+    console.error('Error deleting booking:', err);
+    res.status(500).json({ error: 'Failed to delete booking' });
+  }
+};
+
+export const recoverBooking = async (req, res) => {
+  try {
+    const bookingId = parseInt(req.params.bookingId);
+    
+    const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+    if (!booking.isDeleted) {
+      return res.status(400).json({ message: 'Booking is not deleted' });
+    }
+
+    const recovered = await prisma.booking.update({
+      where: { id: bookingId },
+      data: { isDeleted: false },
+    });
+
+    res.status(200).json({ message: 'Booking recovered successfully', booking: recovered });
+  } catch (err) {
+    console.error('Error recovering booking:', err);
+    res.status(500).json({ error: 'Failed to recover booking' });
+  }
+};
+
+export const hardDeleteBooking = async (req, res) => {
+  try {
+    const bookingId = parseInt(req.params.bookingId);
+
+    const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+
+    await prisma.booking.delete({ where: { id: bookingId } });
+
+    res.status(200).json({ message: 'Booking permanently deleted' });
+  } catch (err) {
+    console.error('Error hard deleting booking:', err);
+    res.status(500).json({ error: 'Failed to hard delete booking' });
+  }
+};
+
